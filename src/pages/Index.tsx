@@ -1,336 +1,301 @@
-import { useState, useRef, useEffect } from 'react';
+import { useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
-import { Slider } from '@/components/ui/slider';
-import { Label } from '@/components/ui/label';
+import { Badge } from '@/components/ui/badge';
 import Icon from '@/components/ui/icon';
 
-interface Circle {
-  x: number;
-  y: number;
-  radius: number;
-  color: string;
-  vx: number;
-  vy: number;
+interface Flower {
+  id: string;
+  name: string;
+  emoji: string;
+  price: number;
+  colors: string[];
+}
+
+interface SelectedFlower {
+  flower: Flower;
+  count: number;
 }
 
 interface Composition {
   id: string;
-  circles: Circle[];
-  timestamp: number;
+  flowers: { flower: Flower; count: number; position: { x: number; y: number; rotation: number } }[];
+  price: number;
+  style: string;
 }
 
-const COLOR_PALETTES = [
-  ['#6E59A5', '#E5DEFF', '#0EA5E9', '#9b87f5', '#D6BCFA'],
-  ['#8B5CF6', '#D946EF', '#F97316', '#0EA5E9', '#FFDEE2'],
-  ['#1EAEDB', '#33C3F0', '#C8C8C9', '#F6F6F7', '#9F9EA1'],
+const FLOWERS: Flower[] = [
+  { id: 'rose', name: 'Роза', emoji: '🌹', price: 150, colors: ['#FF6B9D', '#FF1744', '#FFC1E3'] },
+  { id: 'tulip', name: 'Тюльпан', emoji: '🌷', price: 120, colors: ['#FF6B9D', '#FFD700', '#9370DB'] },
+  { id: 'sunflower', name: 'Подсолнух', emoji: '🌻', price: 100, colors: ['#FFD700', '#FFA500'] },
+  { id: 'daisy', name: 'Ромашка', emoji: '🌼', price: 80, colors: ['#FFFFFF', '#FFD700'] },
+  { id: 'lily', name: 'Лилия', emoji: '🌺', price: 180, colors: ['#FF69B4', '#FFFFFF', '#FF1744'] },
+  { id: 'orchid', name: 'Орхидея', emoji: '🌸', price: 250, colors: ['#DDA0DD', '#FFFFFF', '#FF69B4'] },
+  { id: 'lavender', name: 'Лаванда', emoji: '💐', price: 90, colors: ['#9370DB', '#8A84E2'] },
+  { id: 'peony', name: 'Пион', emoji: '🏵️', price: 200, colors: ['#FFB6C1', '#FF69B4', '#FFFFFF'] },
 ];
 
+const COMPOSITION_STYLES = ['Классический', 'Романтический', 'Минималистичный', 'Пышный'];
+
 const Index = () => {
-  const canvasRef = useRef<HTMLCanvasElement>(null);
-  const [circleCount, setCircleCount] = useState([30]);
-  const [circleSize, setCircleSize] = useState([20]);
-  const [paletteIndex, setPaletteIndex] = useState(0);
-  const [circles, setCircles] = useState<Circle[]>([]);
+  const [selectedFlowers, setSelectedFlowers] = useState<SelectedFlower[]>([]);
   const [compositions, setCompositions] = useState<Composition[]>([]);
-  const [isAnimating, setIsAnimating] = useState(false);
-  const animationFrameRef = useRef<number>();
+  const [selectedComposition, setSelectedComposition] = useState<Composition | null>(null);
 
-  const generateComposition = () => {
-    const canvas = canvasRef.current;
-    if (!canvas) return;
-
-    const ctx = canvas.getContext('2d');
-    if (!ctx) return;
-
-    const width = canvas.width;
-    const height = canvas.height;
-    const palette = COLOR_PALETTES[paletteIndex];
-    const newCircles: Circle[] = [];
-
-    for (let i = 0; i < circleCount[0]; i++) {
-      const radius = circleSize[0] + Math.random() * circleSize[0];
-      const x = radius + Math.random() * (width - radius * 2);
-      const y = radius + Math.random() * (height - radius * 2);
-      const color = palette[Math.floor(Math.random() * palette.length)];
-      const vx = (Math.random() - 0.5) * 0.5;
-      const vy = (Math.random() - 0.5) * 0.5;
-
-      newCircles.push({ x, y, radius, color, vx, vy });
+  const addFlower = (flower: Flower) => {
+    const existing = selectedFlowers.find(sf => sf.flower.id === flower.id);
+    if (existing) {
+      setSelectedFlowers(selectedFlowers.map(sf => 
+        sf.flower.id === flower.id ? { ...sf, count: sf.count + 1 } : sf
+      ));
+    } else {
+      setSelectedFlowers([...selectedFlowers, { flower, count: 1 }]);
     }
-
-    setCircles(newCircles);
   };
 
-  const drawCircles = (circlesToDraw: Circle[]) => {
-    const canvas = canvasRef.current;
-    if (!canvas) return;
-
-    const ctx = canvas.getContext('2d');
-    if (!ctx) return;
-
-    ctx.clearRect(0, 0, canvas.width, canvas.height);
-
-    circlesToDraw.forEach((circle) => {
-      ctx.beginPath();
-      ctx.arc(circle.x, circle.y, circle.radius, 0, Math.PI * 2);
-      ctx.fillStyle = circle.color;
-      ctx.fill();
-      ctx.strokeStyle = 'rgba(255, 255, 255, 0.2)';
-      ctx.lineWidth = 2;
-      ctx.stroke();
-    });
+  const updateCount = (flowerId: string, delta: number) => {
+    setSelectedFlowers(selectedFlowers.map(sf => {
+      if (sf.flower.id === flowerId) {
+        const newCount = Math.max(0, sf.count + delta);
+        return { ...sf, count: newCount };
+      }
+      return sf;
+    }).filter(sf => sf.count > 0));
   };
 
-  const animate = () => {
-    if (!isAnimating) return;
+  const generateCompositions = () => {
+    if (selectedFlowers.length === 0) return;
 
-    setCircles((prevCircles) => {
-      const canvas = canvasRef.current;
-      if (!canvas) return prevCircles;
-
-      const updatedCircles = prevCircles.map((circle) => {
-        let newX = circle.x + circle.vx;
-        let newY = circle.y + circle.vy;
-        let newVx = circle.vx;
-        let newVy = circle.vy;
-
-        if (newX - circle.radius < 0 || newX + circle.radius > canvas.width) {
-          newVx = -newVx;
-          newX = Math.max(circle.radius, Math.min(canvas.width - circle.radius, newX));
+    const newCompositions: Composition[] = [];
+    
+    for (let styleIdx = 0; styleIdx < Math.min(4, COMPOSITION_STYLES.length); styleIdx++) {
+      const style = COMPOSITION_STYLES[styleIdx];
+      const flowers: Composition['flowers'] = [];
+      
+      selectedFlowers.forEach(({ flower, count }) => {
+        for (let i = 0; i < count; i++) {
+          const angle = (Math.random() * 360);
+          const radius = 20 + Math.random() * 60;
+          const x = 50 + Math.cos(angle * Math.PI / 180) * radius;
+          const y = 50 + Math.sin(angle * Math.PI / 180) * radius;
+          const rotation = Math.random() * 360;
+          
+          flowers.push({
+            flower,
+            count: 1,
+            position: { x, y, rotation }
+          });
         }
-
-        if (newY - circle.radius < 0 || newY + circle.radius > canvas.height) {
-          newVy = -newVy;
-          newY = Math.max(circle.radius, Math.min(canvas.height - circle.radius, newY));
-        }
-
-        return { ...circle, x: newX, y: newY, vx: newVx, vy: newVy };
       });
 
-      drawCircles(updatedCircles);
-      return updatedCircles;
-    });
+      flowers.sort(() => Math.random() - 0.5);
 
-    animationFrameRef.current = requestAnimationFrame(animate);
-  };
-
-  useEffect(() => {
-    if (isAnimating) {
-      animate();
-    } else {
-      if (animationFrameRef.current) {
-        cancelAnimationFrame(animationFrameRef.current);
-      }
+      const price = selectedFlowers.reduce((sum, sf) => sum + (sf.flower.price * sf.count), 0);
+      
+      newCompositions.push({
+        id: `comp-${Date.now()}-${styleIdx}`,
+        flowers,
+        price,
+        style
+      });
     }
 
-    return () => {
-      if (animationFrameRef.current) {
-        cancelAnimationFrame(animationFrameRef.current);
-      }
-    };
-  }, [isAnimating]);
-
-  useEffect(() => {
-    drawCircles(circles);
-  }, [circles]);
-
-  useEffect(() => {
-    const canvas = canvasRef.current;
-    if (!canvas) return;
-
-    canvas.width = canvas.offsetWidth;
-    canvas.height = canvas.offsetHeight;
-
-    generateComposition();
-  }, []);
-
-  const saveComposition = () => {
-    const newComposition: Composition = {
-      id: Date.now().toString(),
-      circles: [...circles],
-      timestamp: Date.now(),
-    };
-    setCompositions([newComposition, ...compositions]);
+    setCompositions(newCompositions);
+    setSelectedComposition(newCompositions[0]);
   };
 
-  const loadComposition = (composition: Composition) => {
-    setCircles(composition.circles);
-    setIsAnimating(false);
+  const getTotalPrice = () => {
+    return selectedFlowers.reduce((sum, sf) => sum + (sf.flower.price * sf.count), 0);
   };
 
-  const exportCanvas = () => {
-    const canvas = canvasRef.current;
-    if (!canvas) return;
-
-    const link = document.createElement('a');
-    link.download = `composition-${Date.now()}.png`;
-    link.href = canvas.toDataURL();
-    link.click();
+  const getTotalCount = () => {
+    return selectedFlowers.reduce((sum, sf) => sum + sf.count, 0);
   };
 
   return (
     <div className="min-h-screen bg-background">
-      <header className="border-b border-border/40 backdrop-blur-sm sticky top-0 z-10 bg-background/80">
+      <header className="border-b border-border/40 backdrop-blur-sm sticky top-0 z-10 bg-background/95">
         <div className="container mx-auto px-6 py-6">
-          <h1 className="text-4xl font-bold text-primary">AI Композиции</h1>
-          <p className="text-muted-foreground mt-2">Генеративное искусство с цветными кружочками</p>
+          <div className="flex items-center justify-between">
+            <div>
+              <h1 className="text-4xl font-bold text-primary flex items-center gap-3">
+                <span>🌸</span>
+                Букет Мечты
+              </h1>
+              <p className="text-muted-foreground mt-2">Создайте идеальный букет с AI-помощником</p>
+            </div>
+            {selectedFlowers.length > 0 && (
+              <div className="text-right">
+                <div className="text-3xl font-bold text-primary">{getTotalPrice()} ₽</div>
+                <div className="text-sm text-muted-foreground">{getTotalCount()} {getTotalCount() === 1 ? 'цветок' : getTotalCount() < 5 ? 'цветка' : 'цветов'}</div>
+              </div>
+            )}
+          </div>
         </div>
       </header>
 
       <main className="container mx-auto px-6 py-12">
-        <div className="grid lg:grid-cols-[1fr_400px] gap-8">
+        <div className="grid lg:grid-cols-[400px_1fr] gap-8">
           <div className="space-y-6">
-            <Card className="p-8 bg-card border-border/40 shadow-lg">
-              <canvas
-                ref={canvasRef}
-                className="w-full rounded-lg bg-white"
-                style={{ height: '600px' }}
-              />
+            <Card className="p-6 bg-card border-border/40 sticky top-24">
+              <h2 className="text-xl font-semibold mb-4 flex items-center gap-2">
+                <Icon name="Flower2" size={24} />
+                Выберите цветы
+              </h2>
               
-              <div className="flex gap-3 mt-6">
-                <Button
-                  onClick={generateComposition}
-                  className="flex-1"
-                  size="lg"
-                >
-                  <Icon name="Sparkles" size={20} className="mr-2" />
-                  Новая композиция
-                </Button>
-                <Button
-                  onClick={() => setIsAnimating(!isAnimating)}
-                  variant={isAnimating ? 'destructive' : 'secondary'}
-                  size="lg"
-                >
-                  <Icon name={isAnimating ? 'Pause' : 'Play'} size={20} />
-                </Button>
-                <Button
-                  onClick={saveComposition}
-                  variant="secondary"
-                  size="lg"
-                >
-                  <Icon name="Save" size={20} />
-                </Button>
-                <Button
-                  onClick={exportCanvas}
-                  variant="secondary"
-                  size="lg"
-                >
-                  <Icon name="Download" size={20} />
-                </Button>
+              <div className="space-y-3 max-h-[500px] overflow-y-auto pr-2">
+                {FLOWERS.map((flower) => (
+                  <button
+                    key={flower.id}
+                    onClick={() => addFlower(flower)}
+                    className="w-full flex items-center gap-4 p-4 rounded-lg border-2 border-border/40 hover:border-primary transition-all hover:scale-105 bg-white"
+                  >
+                    <span className="text-4xl">{flower.emoji}</span>
+                    <div className="flex-1 text-left">
+                      <div className="font-semibold text-foreground">{flower.name}</div>
+                      <div className="text-sm text-muted-foreground">{flower.price} ₽</div>
+                    </div>
+                    <Icon name="Plus" size={20} className="text-primary" />
+                  </button>
+                ))}
               </div>
-            </Card>
-
-            <Card className="p-6 bg-card border-border/40">
-              <h2 className="text-2xl font-semibold mb-6">Галерея композиций</h2>
-              {compositions.length === 0 ? (
-                <div className="text-center py-12 text-muted-foreground">
-                  <Icon name="ImageOff" size={48} className="mx-auto mb-4 opacity-50" />
-                  <p>Сохранённых композиций пока нет</p>
-                </div>
-              ) : (
-                <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
-                  {compositions.map((comp) => (
-                    <button
-                      key={comp.id}
-                      onClick={() => loadComposition(comp)}
-                      className="aspect-square bg-white rounded-lg border-2 border-border/40 hover:border-primary transition-all hover:scale-105 overflow-hidden group"
-                    >
-                      <canvas
-                        ref={(canvas) => {
-                          if (canvas) {
-                            canvas.width = 300;
-                            canvas.height = 300;
-                            const ctx = canvas.getContext('2d');
-                            if (ctx) {
-                              ctx.clearRect(0, 0, 300, 300);
-                              comp.circles.forEach((circle) => {
-                                const scale = 300 / 600;
-                                ctx.beginPath();
-                                ctx.arc(
-                                  circle.x * scale,
-                                  circle.y * scale,
-                                  circle.radius * scale,
-                                  0,
-                                  Math.PI * 2
-                                );
-                                ctx.fillStyle = circle.color;
-                                ctx.fill();
-                                ctx.strokeStyle = 'rgba(255, 255, 255, 0.2)';
-                                ctx.lineWidth = 2;
-                                ctx.stroke();
-                              });
-                            }
-                          }
-                        }}
-                        className="w-full h-full"
-                      />
-                    </button>
-                  ))}
-                </div>
-              )}
             </Card>
           </div>
 
           <div className="space-y-6">
-            <Card className="p-6 bg-card border-border/40 sticky top-24">
-              <h2 className="text-xl font-semibold mb-6">Параметры генерации</h2>
-              
-              <div className="space-y-6">
-                <div className="space-y-3">
-                  <Label className="text-base font-medium">
-                    Количество: {circleCount[0]}
-                  </Label>
-                  <Slider
-                    value={circleCount}
-                    onValueChange={setCircleCount}
-                    min={5}
-                    max={100}
-                    step={5}
-                    className="w-full"
-                  />
-                </div>
+            {selectedFlowers.length === 0 ? (
+              <Card className="p-12 text-center bg-card border-border/40">
+                <div className="text-6xl mb-4">💐</div>
+                <h3 className="text-2xl font-semibold mb-2">Начните создавать букет</h3>
+                <p className="text-muted-foreground">Выберите цветы из каталога слева</p>
+              </Card>
+            ) : (
+              <>
+                <Card className="p-6 bg-card border-border/40">
+                  <div className="flex items-center justify-between mb-4">
+                    <h2 className="text-xl font-semibold">Ваш выбор</h2>
+                    <Button onClick={generateCompositions} size="lg">
+                      <Icon name="Wand2" size={20} className="mr-2" />
+                      Сгенерировать букеты
+                    </Button>
+                  </div>
 
-                <div className="space-y-3">
-                  <Label className="text-base font-medium">
-                    Размер: {circleSize[0]}px
-                  </Label>
-                  <Slider
-                    value={circleSize}
-                    onValueChange={setCircleSize}
-                    min={10}
-                    max={50}
-                    step={5}
-                    className="w-full"
-                  />
-                </div>
-
-                <div className="space-y-3">
-                  <Label className="text-base font-medium">Цветовая палитра</Label>
-                  <div className="grid grid-cols-3 gap-3">
-                    {COLOR_PALETTES.map((palette, idx) => (
-                      <button
-                        key={idx}
-                        onClick={() => setPaletteIndex(idx)}
-                        className={`h-20 rounded-lg border-2 transition-all hover:scale-105 ${
-                          paletteIndex === idx ? 'border-primary ring-2 ring-primary/20' : 'border-border'
-                        }`}
-                        style={{
-                          background: `linear-gradient(135deg, ${palette.join(', ')})`,
-                        }}
-                      />
+                  <div className="space-y-3">
+                    {selectedFlowers.map(({ flower, count }) => (
+                      <div key={flower.id} className="flex items-center gap-4 p-4 bg-secondary/20 rounded-lg">
+                        <span className="text-3xl">{flower.emoji}</span>
+                        <div className="flex-1">
+                          <div className="font-semibold">{flower.name}</div>
+                          <div className="text-sm text-muted-foreground">{flower.price} ₽ × {count} = {flower.price * count} ₽</div>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <Button
+                            onClick={() => updateCount(flower.id, -1)}
+                            variant="outline"
+                            size="sm"
+                          >
+                            <Icon name="Minus" size={16} />
+                          </Button>
+                          <span className="w-8 text-center font-semibold">{count}</span>
+                          <Button
+                            onClick={() => updateCount(flower.id, 1)}
+                            variant="outline"
+                            size="sm"
+                          >
+                            <Icon name="Plus" size={16} />
+                          </Button>
+                        </div>
+                      </div>
                     ))}
                   </div>
-                </div>
+                </Card>
 
-                <div className="pt-4 border-t border-border/40">
-                  <div className="flex items-center gap-2 text-sm text-muted-foreground">
-                    <Icon name="Info" size={16} />
-                    <span>Меняйте параметры и жмите "Новая композиция"</span>
-                  </div>
-                </div>
-              </div>
-            </Card>
+                {compositions.length > 0 && (
+                  <>
+                    <Card className="p-6 bg-card border-border/40">
+                      <h2 className="text-xl font-semibold mb-4">Варианты композиций</h2>
+                      <div className="grid md:grid-cols-2 gap-4">
+                        {compositions.map((comp) => (
+                          <button
+                            key={comp.id}
+                            onClick={() => setSelectedComposition(comp)}
+                            className={`p-4 rounded-lg border-2 transition-all hover:scale-105 ${
+                              selectedComposition?.id === comp.id
+                                ? 'border-primary ring-2 ring-primary/20'
+                                : 'border-border/40'
+                            }`}
+                          >
+                            <div className="relative aspect-square bg-gradient-to-br from-secondary/20 to-accent/20 rounded-lg mb-3 overflow-hidden">
+                              {comp.flowers.map((item, idx) => (
+                                <div
+                                  key={idx}
+                                  className="absolute text-3xl"
+                                  style={{
+                                    left: `${item.position.x}%`,
+                                    top: `${item.position.y}%`,
+                                    transform: `translate(-50%, -50%) rotate(${item.position.rotation}deg)`,
+                                  }}
+                                >
+                                  {item.flower.emoji}
+                                </div>
+                              ))}
+                            </div>
+                            <Badge variant="secondary" className="mb-2">{comp.style}</Badge>
+                            <div className="font-semibold text-lg">{comp.price} ₽</div>
+                          </button>
+                        ))}
+                      </div>
+                    </Card>
+
+                    {selectedComposition && (
+                      <Card className="p-8 bg-card border-border/40">
+                        <div className="grid md:grid-cols-2 gap-8">
+                          <div>
+                            <h3 className="text-2xl font-semibold mb-4">{selectedComposition.style} букет</h3>
+                            <div className="space-y-4">
+                              <div>
+                                <div className="text-sm text-muted-foreground mb-2">Состав:</div>
+                                {selectedFlowers.map(({ flower, count }) => (
+                                  <div key={flower.id} className="flex items-center gap-2 mb-1">
+                                    <span>{flower.emoji}</span>
+                                    <span className="text-sm">{flower.name} × {count}</span>
+                                  </div>
+                                ))}
+                              </div>
+                              <div className="pt-4 border-t border-border/40">
+                                <div className="flex justify-between items-center mb-4">
+                                  <span className="text-muted-foreground">Итого:</span>
+                                  <span className="text-3xl font-bold text-primary">{selectedComposition.price} ₽</span>
+                                </div>
+                                <Button className="w-full" size="lg">
+                                  <Icon name="ShoppingCart" size={20} className="mr-2" />
+                                  Заказать букет
+                                </Button>
+                              </div>
+                            </div>
+                          </div>
+                          <div className="relative aspect-square bg-gradient-to-br from-secondary/20 to-accent/20 rounded-lg overflow-hidden">
+                            {selectedComposition.flowers.map((item, idx) => (
+                              <div
+                                key={idx}
+                                className="absolute text-5xl transition-all duration-300"
+                                style={{
+                                  left: `${item.position.x}%`,
+                                  top: `${item.position.y}%`,
+                                  transform: `translate(-50%, -50%) rotate(${item.position.rotation}deg)`,
+                                }}
+                              >
+                                {item.flower.emoji}
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      </Card>
+                    )}
+                  </>
+                )}
+              </>
+            )}
           </div>
         </div>
       </main>
